@@ -8,6 +8,11 @@ Works with the simulated and real robot.
 
 There are 2 monolithic launch files. One launches the required nodes to detect/recognize objects, and other does that + loads the extra nodes for object manipulation. <br>
 The demo code shows how to return information about the table, detected object PointCloud clusters and recognized object models. It also shows how to grasp the nearest object using a specific arm.
+<br>
+
+<br>
+Note: This uses alternative YAML files for arm kinematics and planning, so we can specify the grasping frame as the tip link. Without these, things will fail. <br>
+Also, the Interpolated IK node uses the IK Services that were loaded from the launch file. But object_manipulator loads the IK separately as a plugin, and ignores any alternative parameters!
 
 ToDo: 
  - Debug object_manipulator to find out why it is ignoring the +z lift direction (upwards). Maybe a problem with TF frame transform.
