@@ -1,0 +1,480 @@
+<launch>
+
+  <!-- 
+  Launch the Tabletop Object Manipulation Pipeline for the REEM robot.
+
+  Can be used to scan a table, segment object PointCloud clusters,
+  plan grasps on those clusters, plan the arm move, and grasp!
+
+
+  This launch comprises 4 blocks:
+  - Perception
+  - Tabletop object detection
+  - Planning / Manipulation pre-requisites
+  - Manipulation
+
+  Can be easily used in simulation, or with the real robot.
+
+  In ROS Fuerte, the PR2 has 3 launch files, contained in 2 locations.
+  Most of this stuff can be re-used for general manipulation, and only
+  some is specific to tabletop behaviour.
+
+  ~~ David Butterworth
+     PAL Robotics S.L. 2013
+  -->
+
+
+  <arg name="sim" default="true"/>
+  <arg name="use_snapshotter" default="true" /> <!-- enable the PointCloud snapshotter -->
+
+
+
+  <!-- 
+  Launch Perception
+  -->
+
+  <include file="$(find reem_perception_launch)/launch/perception.launch">
+    <arg name="sim" value="$(arg sim)" />
+    <arg name="use_snapshotter" value="$(arg use_snapshotter)" />
+  </include>
+
+
+
+  <!-- 
+  The rest of the launch file is required for the Tabletop Manipulation
+  -->
+
+  <arg name="kinect_camera_name"  default="head_mount_xtion" />
+  <arg name="kinect_frame_prefix" default="/head_mount_xtion" />
+  <arg name="flatten_table"       default="false" />
+
+  <arg name="log_to_warehouse" default="false"/> <!-- log data from move_arm_warehouse, for later interrogation in the Planning Warehouse -->
+
+  <arg name="load_kinematics" default="false" /> <!-- launch Arm Kinematics from here -->
+  <arg name="load_move_arm"           default="false" /> <!-- launch move_arm from here -->
+  <arg name="load_move_arm_warehouse" default="false" /> <!-- launch move_arm_warehouse from here, NODE DOES NOT WORK YET
+                                                              note this version of move_arm allows logging to Warehouse, 
+                                                         but you need a patched version that can be loaded without pre-plan scan or monitoring -->
+
+
+
+  <!-- 
+  This block has pre-requisites for Tabletop Manipulation, that must get launched before other nodes
+  -->
+
+  <!-- Mongo Database -->
+  <!-- optional, this stores information about the Planning Scene for later interrogation in the Planning Warehouse -->
+  <group if="$(arg log_to_warehouse)">
+    <param name="warehouse_host" value="localhost"/>
+    <param name="warehouse_port" value="27020"/>
+    <node name="mongo" type="wrapper.py" pkg="mongodb">
+      <param name="overwrite" value="false"/>
+      <param name="database_path" value="arm_navigation_dbs/reem_manip_db"/> <!-- to be tested -->
+    </node>
+  </group>
+
+
+  <!-- PR2 launches move_arm_head_monitor here, for moving the head-mounted stereo camera
+       to the future predicted location of the arm, and using a filtered_attached_objects
+       PointCloud to check for any potential collisions. -->
+ 
+
+
+  <!-- 
+  This block below is like  'reem_arm_navigation/launch/reem_arm_navigation.launch'
+  And maybe it could be merged, but currently we don't want to load perception from there, 
+  and the other nodes are launched with different parameters)
+  -->
+
+  <!-- Load Planning Environment parameters -->
+  <!-- Loads reem_planning_description.yaml
+         which contains joint groups & joints in collision -->
+  <!-- Normally this is included in multiple places, and the PR2 pipeline loads it about 4 times! -->
+  <!--<include file="$(find reem_arm_navigation)/launch/reem_planning_environment.launch" /> -->
+  <!-- But we need special params, which we only load once: -->
+  <rosparam command="load" ns="robot_description_planning" file="$(find reem_tabletop_manipulation_launch)/config/reem_planning_description.yaml" />
+
+  <!-- Environment Server & Planning Scene Validity Server -->
+  <!-- Loads use_monitor & use_collision_map, environment server padding -->
+  <include file="$(find reem_arm_navigation)/launch/environment_server.launch">
+    <arg name="use_monitor" value="true" />
+    <arg name="use_collision_map" value="true" />
+  </include>
+
+  <!-- don't launch perception here -->
+  <!-- <group if="$(arg use_rgbd_sensor)">
+    <include file="$(find reem_arm_navigation)/launch/perception.launch"/>
+  </group>-->
+
+  <!-- don't launch kinematics like this, it loads reem_planning_description.yaml
+       and the 3 arm .yaml files, but we need different parameters! -->
+  <!--<include file="$(find reem_arm_navigation)/launch/constraint_aware_kinematics.launch" /> -->
+
+  <!-- Arm Kinematics Constraint Aware -->
+  <!-- load custom parameters, set output to terminal -->
+  <group if="$(arg load_kinematics)">
+    <!--<include file="$(find reem_arm_navigation)/launch/reem_planning_environment.launch" /> --> <!-- already loaded -->
+
+    <node pkg="arm_kinematics_constraint_aware" type="arm_kinematics_constraint_aware" name="reem_left_arm_kinematics" output="screen">
+      <rosparam command="load" file="$(find reem_tabletop_manipulation_launch)/config/left_arm_kinematics.yaml" />
+    </node>
+    <node pkg="arm_kinematics_constraint_aware" type="arm_kinematics_constraint_aware" name="reem_right_arm_kinematics" output="screen">
+      <rosparam command="load" file="$(find reem_tabletop_manipulation_launch)/config/right_arm_kinematics.yaml" />
+    </node>
+    <node pkg="arm_kinematics_constraint_aware" type="arm_kinematics_constraint_aware" name="reem_right_arm_torso_kinematics" output="screen">
+      <rosparam command="load" file="$(find reem_tabletop_manipulation_launch)/config/right_arm_torso_kinematics.yaml" />
+    </node>
+  </group>
+
+  <!-- don't launch OMPL like this, we may want to test a different planner -->
+  <!--<include file="$(find reem_arm_navigation)/launch/ompl_planning.launch" /> -->
+
+  <!-- OMPL (Open Motion Planning Library -->
+  <!-- loads planner config, REEM default arm planner is LazyRRTkConfig1 -->
+  <!-- loads robot padding, for OMPL and Trajectory Filter -->
+  <!-- Available planners:
+           - LazyRRTkConfig1   (default)
+           - SBLkConfig1
+           - LBKPIECEkConfig1
+           - RTTStarConfig1
+  -->
+  <!--<include file="$(find reem_arm_navigation)/launch/reem_planning_environment.launch" /> --> <!-- already loaded -->
+  <node pkg="ompl_ros_interface" type="ompl_ros" name="ompl_planning">
+    <param name="default_planner_config" type="string" value="LazyRRTkConfig1" />
+    <rosparam command="load" file="$(find reem_arm_navigation)/config/ompl_planning.yaml" />
+    <rosparam command="load" file="$(find reem_arm_navigation)/config/robot_padding.yaml" />
+  </node>
+
+  <!-- don't launch trajectory filter like this, we want to set the output to terminal -->
+  <!--<include file="$(find reem_arm_navigation)/launch/trajectory_filter_server.launch" /> -->
+
+  <!-- Arm Trajectory Filter -->
+  <!-- service_type: FilterJointTrajectoryWithConstraints -->
+  <!-- loads default filter config, which is  unnormalize_trajectory & cubic_spline_short_cutter_smoother, which is what PR2 uses.
+       But REEM should have its own filters.yaml, so we can test the new filter. -->
+  <!--<include file="$(find reem_arm_navigation)/launch/reem_planning_environment.launch" /> --> <!-- already loaded -->
+  <node pkg="trajectory_filter_server" type="trajectory_filter_server" name="trajectory_filter_server" output="screen">
+    <rosparam command="load" file="$(find trajectory_filter_server)/config/filters.yaml" />
+    <rosparam command="load" file="$(find reem_arm_navigation)/config/joint_limits.yaml" />
+    <rosparam command="load" file="$(find reem_arm_navigation)/config/robot_padding.yaml" />
+  </node>
+
+  <!--  DO WE NEED TO SET THIS ?
+  <param name="trajectory_filter/object_padd" value="0.04"/>
+  -->
+
+
+  <!-- don't launch move_arm like this, we want to set the output to terminal.
+       also the manipulation pipeline uses separate movearm_warehouse launch files which
+       allow optional logging to MongoDB, for later interrogation using the Warehouse. -->
+  <!--<include file="$(find reem_arm_navigation)/launch/move_groups.launch" /> -->
+
+
+  <!-- Move Arm Action (standard version) -->
+  <group if="$(arg load_move_arm)">
+    <node pkg="move_arm" type="move_arm_simple_action" name="reem_move_left_arm" output="screen">
+      <param name="group" type="string" value="left_arm" />
+      <param name="trajectory_filter_allowed_time" type="double" value="2.0" />
+      <remap from="arm_ik" to="reem_left_arm_kinematics/get_constraint_aware_ik" />
+      <param name="controller_action_name" type="string" value="left_arm_controller/follow_joint_trajectory" />
+    </node>
+    <node pkg="move_arm" type="move_arm_simple_action" name="reem_move_right_arm_torso" output="screen">
+      <param name="group" type="string" value="right_arm_torso" />
+      <param name="trajectory_filter_allowed_time" type="double" value="2.0" />
+      <remap from="arm_ik" to="reem_right_arm_torso_kinematics/get_constraint_aware_ik" />
+      <param name="controller_action_name" type="string" value="right_arm_torso_controller/follow_joint_trajectory" />
+    </node>
+  </group>
+
+  <!-- Move Arm Action (experimental) -->
+  <!-- note: this is experimental move_arm_warehouse, as used by PR2 -->
+  <!--       you must used the patched version, which allows launching without pre-plan scan & monitoring nodes -->
+  <!-- it can optionally log to MongoDB, for later interrogation using the Planning Warehouse -->
+
+  <group if="$(arg load_move_arm_warehouse)">
+    <node pkg="move_arm_warehouse" type="move_arm_simple_action" name="reem_move_left_arm" output="screen">
+      <param name="group" type="string" value="left_arm" />
+      <param name="trajectory_filter_allowed_time" type="double" value="2.0" />
+      <remap from="arm_ik" to="reem_left_arm_kinematics/get_constraint_aware_ik" />
+      <param name="ik_allowed_time" type="double" value="2.0" />
+      <param name="controller_action_name" type="string" value="left_arm_controller/follow_joint_trajectory" />
+
+      <!--<param name="head_monitor_link" type="string" value="test_this_later" /> -->
+      <!--<param name="head_monitor_time_offset" type="double" value="1.0" /> -->
+
+      <param name="log_to_warehouse" value="$(arg log_to_warehouse)"/>
+
+      <param name="do_preplan_scan" value="false"/>
+      <param name="do_monitoring" value="false"/>
+    </node>
+    <node pkg="move_arm_warehouse" type="move_arm_simple_action" name="reem_move_right_arm_torso" output="screen">
+      <param name="group" type="string" value="right_arm_torso" />
+      <param name="trajectory_filter_allowed_time" type="double" value="2.0" />
+      <remap from="arm_ik" to="reem_right_arm_torso_kinematics/get_constraint_aware_ik" />
+      <param name="ik_allowed_time" type="double" value="2.0" />
+      <param name="controller_action_name" type="string" value="right_arm_torso_controller/follow_joint_trajectory" />
+
+      <!--<param name="head_monitor_link" type="string" value="test_this_later" /> -->
+      <!--<param name="head_monitor_time_offset" type="double" value="1.0" /> -->
+
+      <param name="log_to_warehouse" value="$(arg log_to_warehouse)"/>
+
+      <param name="do_preplan_scan" value="false"/>
+      <param name="do_monitoring" value="false"/>
+    </node>
+  </group>
+
+
+
+  <!-- 
+  This block is for Tabletop Manipulation
+  -->
+
+  <!-- Interpolated IK -->
+  <!-- was using all zero angles:
+       [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+
+       now using angles for the 'elbow_back' pose, which has the elbow and wrist horizontal:
+       [[1.6,2.05,-1.64,2.20,1.3,0.0,0.0]]
+
+       Note: ik_utilities.py is hard-coded to reverse angles 0,2,4 of the left arm. 
+             May need to fix that, but it works okay for now.
+  -->
+  <rosparam param="left_arm_ik_start_angles" >[[1.6,2.05,-1.64,2.20,1.3,0.0,0.0]]</rosparam>
+  <rosparam param="right_arm_ik_start_angles">[[1.6,2.05,-1.64,2.20,1.3,0.0,0.0]]</rosparam>
+
+  <!-- right -->
+  <node name="interpolated_ik_node_right" pkg="interpolated_ik_motion_planner" type="interpolated_ik_motion_planner.py" args="r" respawn="true" output="screen" >
+      <param name="robot_prefix" type="string" value="reem"/> <!-- so it looks for /reem_right_arm_kinematics/  -->
+      <remap from="~ik_start_angles" to="/left_arm_ik_start_angles"/>
+
+      <param name="num_steps" value ="4" /> <!-- number of interpolation steps, min = 2, default = 6 -->
+      <param name="consistent_angle" type="double" value="0.5"/> <!-- max allowable variation in any joint, default = 0.349 -->
+      <param name="collision_aware" type="int" value="1"/> <!-- return collision-aware IK solutions, default = 1 (yes) -->
+      <param name="start_from_end" type="int" value="1"/> <!-- start interpolating from the final (grasp) pose, default = 0 (start at pre-grasp) -->
+  </node>
+  <!-- left -->
+  <node name="interpolated_ik_node_left" pkg="interpolated_ik_motion_planner" type="interpolated_ik_motion_planner.py" args="l" respawn="true" output="screen" >
+      <param name="robot_prefix" type="string" value="reem"/> <!-- so it looks for /reem_left_arm_kinematics/  -->
+      <remap from="~ik_start_angles" to="/left_arm_ik_start_angles"/>
+
+      <param name="num_steps" value ="4" /> <!-- number of interpolation steps, min = 2, default = 6 -->
+      <param name="consistent_angle" type="double" value="0.5"/> <!-- max allowable variation in any joint, default = 0.349 -->
+      <param name="collision_aware" type="int" value="1"/> <!-- return collision-aware IK solutions, default = 1 (yes) -->
+      <param name="start_from_end" type="int" value="1"/> <!-- start interpolating from the final (grasp) pose, default = 0 (start at pre-grasp) -->
+  </node>
+
+
+  <!-- 2nd Arm Trajectory Filter -->
+  <!-- service_type: FilterJointTrajectory -->
+  <!-- loads default filter config, which is  unnormalize_trajectory -->
+  <include file="$(find trajectory_filter_server)/launch/trajectory_unnormalize.launch"/>
+
+
+  <!-- Current State Validator -->
+  <!-- check if current state is in collision or not, this is disabled for PR2 -->
+  <!--<include file="$(find arm_navigation_experimental_tools)/launch/current_state_validator.launch"/> -->
+
+
+  <!-- Load hand params for grasp planners inside object_manipulator -->
+  <rosparam command="load" file="$(find reem_tabletop_manipulation_launch)/config/reem_hand_descriptions.yaml"/>
+
+
+  <!-- Load arm configurations -->
+  <!-- Check what this is for, PR2 has side/front/above positions & trajectories defined -->
+  <!--<rosparam command="load" file="$(find pr2_object_manipulation_launch)/config/pr2_arm_configurations.yaml"/> -->
+
+
+  <!-- Grasp Planners -->
+
+  <!-- Database/model-based Grasp Planner -->
+  <!-- this is provided by the database wrapper node -->
+  
+  <!-- Cluster Grasp Planner -->
+  <!-- load the REEM hand grasping model -->
+  <node name="grasp_planner_cluster" pkg="pr2_gripper_grasp_planner_cluster" type="point_cluster_grasp_planner_server.py" respawn="false" output="screen">
+    <rosparam command="load" file="$(find reem_tabletop_manipulation_launch)/config/reem_hand_model.yaml" />
+    <param name="z_up_frame" value="/base_footprint"/>
+    <param name="backoff_depth_steps" value="8"/>
+  </node>  
+
+  <!-- Probabilistic Grasp Planner -->
+  <!-- to be tested, this combines the results from the database (model) planner & the cluster planner -->
+  <!--<include file="$(find bayesian_grasp_planner)/launch/bayesian_grasp_planner_node.launch"/> -->
+
+  <!-- OpenRAVE Grasp Planner -->
+  <!-- to be tested, this sends the data to/from OpenRave -->
+  <!--<remap from="/GraspPlanning" to="/openrave_grasp_planner" /> -->
+  <!--<node pkg="openrave_grasp_planner" type="openrave_grasp_planner.py" name="openrave_graspplanning" args=" - -returngrasps=2 - -scene=$(find robot_description)/urdf/robot.urdf" output="screen"/> -->
+  <!-- to switch off the ik check add: - -ignoreik -->
+  <!-- to ask a specific number (eg 10) of grasps add: - -returngrasps=10 -->
+  <!-- by default the Planner is set to returngrasps = 1, so it gives the fastest solution -->
+
+
+  <!-- REEM Hand Grasp Posture Controller/Action -->
+  <!-- note: the PR2 launches the posture controller here, and the main gripper Action is already launched
+             from the default controllers launch file. but, because REEM only has one hand Action (this one)
+             then it should probably be launched there too. however, launching it here means we can easily change
+             all these configuration params for testing. -->
+  <include file="$(find reem_hand_grasp_controller)/launch/both_hands.launch">
+    <arg name="sim" value="$(arg sim)" /> <!-- control 7 joints in sim, 3 joints on real robot --> 
+  </include>
+
+
+  <!-- Object Manipulator -->
+  <!-- co-ordinates grasp testing, IK, grasp execution -->
+  <node name="object_manipulator" pkg="object_manipulator" type="object_manipulator_node" respawn="false" output="screen">
+
+    <!-- Kinematics Plugin -->
+    <!-- default is 'pr2_arm_kinematics/PR2ArmKinematicsPlugin' -->
+    <param name="kinematics_plugin_name" type="string" value="reem_kinematics_constraint_aware/ReemKinematicsPlugin" />
+
+    <!-- WARNING: The IK plugin is loaded with its default parameters, so the source file was modified to make them larger
+                  Need to find where to set  set max_solver_iterations  and  max_search_iterations via node param  -->
+
+
+    <remap from="right_arm/constraint_aware_ik" to="/reem_right_arm_kinematics/get_constraint_aware_ik" />    
+    <remap from="left_arm/constraint_aware_ik" to="/reem_left_arm_kinematics/get_constraint_aware_ik" />    
+
+    <remap from="right_arm/get_fk" to="/reem_right_arm_kinematics/get_fk" />    
+    <remap from="left_arm/get_fk" to="/reem_left_arm_kinematics/get_fk" />    
+
+    <remap from="right_arm/get_ik_solver_info" to="/reem_right_arm_kinematics/get_ik_solver_info" />    
+    <remap from="left_arm/get_ik_solver_info" to="/reem_left_arm_kinematics/get_ik_solver_info" />    
+
+    <remap from="right_arm/interpolated_ik" to="/r_interpolated_ik_motion_plan" />    
+    <remap from="left_arm/interpolated_ik" to="/l_interpolated_ik_motion_plan" />    
+    <remap from="right_arm/interpolated_ik_set_params" to="/right_interpolated_ik_motion_plan_set_params" />    
+    <remap from="left_arm/interpolated_ik_set_params" to="/left_interpolated_ik_motion_plan_set_params" />    
+
+    <remap from="right_arm/get_state_validity" to="/environment_server/get_state_validity" />    
+    <remap from="left_arm/get_state_validity" to="/environment_server/get_state_validity" />    
+
+    <remap from="right_arm/move_arm" to="/move_right_arm" />    
+    <remap from="left_arm/move_arm" to="/move_left_arm" />    
+
+    <remap from="right_arm/joint_trajectory" to="/right_arm_controller/joint_trajectory_action" />    
+    <remap from="left_arm/joint_trajectory" to="/left_arm_controller/joint_trajectory_action" />    
+
+    <remap from="right_arm/hand_posture_execution" to="/right_hand_controller/grasp_posture_controller" />    
+    <remap from="left_arm/hand_posture_execution" to="/left_hand_controller/grasp_posture_controller" />
+    <remap from="right_arm/grasp_status" to="/right_hand_controller/grasp_status" />
+    <remap from="left_arm/grasp_status" to="/left_hand_controller/grasp_status" />
+
+    <!-- Simulated REEM uses pr2_controller_manager --> 
+    <remap if="$(arg sim)" from="list_controllers" to="pr2_controller_manager/list_controllers"/>
+    <remap if="$(arg sim)" from="switch_controller" to="pr2_controller_manager/switch_controller"/>
+    <!-- Real REEM currently requires a Service publishing a hard-coded list of available controllers --> 
+    <!-- If all works correctly, object_manipulator should have no reason to try to call the switch_controller Service --> 
+    <remap unless="$(arg sim)" from="list_controllers" to="fake_controllers_list/list_controllers"/>
+    <!--<remap unless="$(arg sim)" from="list_controllers" to="have_not_implemented/switch_controller"/> -->
+
+    <param name="right_arm_joint_controller" value="right_arm_controller" />
+    <param name="left_arm_joint_controller" value="left_arm_controller" />
+
+    <!-- object_manipulator requires this service to launch, which is provided by a Cluster Grasp Planner --> 
+    <param name="default_cluster_planner" value="/plan_point_cluster_grasp" />
+
+    <!-- other grasp planners are un-tested -->
+    <!-- note: if a model is included with the grasp request, object_manipulator will call the database planner and fail --> 
+    <param name="default_database_planner" value="/database_grasp_planning" />  
+    <param name="default_probabilistic_planner" value="/probabilistic_grasp_planning" />
+    <param name="use_probabilistic_grasp_planner" value="false" />
+
+    <param name="randomize_grasps" value="false" />
+
+    <!-- Collision Map reset service, OctoMap Server uses a different Service --> 
+    <remap from="collider_node/reset" to="octomap_server/reset" />    
+  </node>
+
+
+  <!-- Fake Controllers List --> 
+  <!-- real REEM currently requires a Service publishing a hard-coded list of available controllers --> 
+  <group unless="$(arg sim)">
+    <node name="fake_controllers_list" pkg="fake_controllers_list" type="fake_controllers_list" args="left_arm_controller right_arm_controller" output="screen" />
+  </group>
+
+
+  <!-- pad objects when filtering from collision map-->
+  <rosparam param="/robot_description_planning/default_object_padding">0.05</rosparam>
+
+
+
+  <!-- 
+  TODO: test if can put some of the following node params under their specific node
+  -->
+
+  <!-- Household objects database server -->
+  <!--    It is optional to have a working database, it's only required to match models to clusters, or use pre-planned grasps -->
+  <!--    However you must load this node, because many other nodes require its mesh Service -->
+  <!--<rosparam command="load"  file="$(find reem_household_objects_db)/config/server.yaml" /> -->   <!-- Local REEM database -->
+  <rosparam command="load"  file="$(find household_objects_database)/config/wgs36.yaml" />   <!-- Use this incorrect config to disable database -->
+  <node pkg="household_objects_database" name="objects_database_node" type="objects_database_node" respawn="true" output="screen"/>    
+
+
+  <!-- Cluster Bounding Box Finger --> 
+  <node name="cluster_bounding_box_finder" pkg="object_manipulator" cwd="node" type="cluster_bounding_box_finder_server.py" output="screen" respawn="false" >
+    <param name="z_up_frame" value="/base_link" />
+  </node>
+
+
+  <!-- Tabletop Segmentation, Object Detection & (optional) Recognition -->
+  <!-- PR2 doesn't self_filter the input for this, so we're doing the same, because the self_filter lowers the resolution -->
+  <include file="$(find tabletop_object_detector)/launch/tabletop_complete.launch">
+    <arg name="tabletop_segmentation_points_input" value="$(arg kinect_camera_name)/depth_registered/points"/>
+    <arg name="flatten_table" value="$(arg flatten_table)"/>
+  </include>
+
+  <!-- params for  tabletop_object_recognition -->
+  <param name="tabletop_object_recognition/fit_merge_threshold" value="0.05" /> <!-- threshold for separation of clusters -->
+  <param name="tabletop_object_recognition/min_marker_quality" value="0.003" /> <!-- if object detection confidence is below this threshold, display a marker in Rviz -->
+
+
+  <!-- Tabletop Collision Map Processing -->
+  <!-- adds objects to collision map, removes the table plane, etc. -->
+  <node pkg="tabletop_collision_map_processing" name="tabletop_collision_map_processing" type="tabletop_collision_map_processing_node" respawn="false" output="screen">
+    <param name="get_model_mesh_srv" value="/objects_database_node/get_model_mesh" />
+    <param name="static_map_cloud_name" value="/doesnt_exist" /> <!-- doesn't appear to be used for anything anymore -->
+    <param name="table_thickness" value="0.02" /> <!-- after table segmentation, this depth of voxels are subtracted from collision map -->
+  </node>  
+
+
+  <!-- params for  tabletop_segmentation -->
+
+  <!-- Minimum number of points per cluster -->
+  <!-- robot_self_filter downsamples the PointCloud, so the segmentation will otherwise miss some objects -->
+  <param name="tabletop_segmentation/min_cluster_size" value="50" />  <!-- default = 300 -->
+
+  <!-- This has to be the same frame as the 'desired_frame' in your service calls to tabletop_collision_map_processing -->
+  <param name="tabletop_segmentation/processing_frame" value="base_footprint" />
+
+  <!-- Params for the box filter inside the tabletop_segmentation node -->
+  <!-- if not using the self-filtered point cloud, these limits have to be set so that they exclude all parts of the robot -->
+  <!-- Filter range is in meters!  Note that max_z is 1.5, if it's too low you will lose the tops of object clusters -->
+  <!-- Filter range is NOT 0.0 to 1.0 like API suggests !! -->
+
+  <param name="tabletop_segmentation/x_filter_min" value="0.1" />  <!-- 0.1  can see closer to front, default = 0.3 -->
+  <param name="tabletop_segmentation/x_filter_max" value="1.0" />  <!-- default = 1.0 -->
+
+  <param name="tabletop_segmentation/y_filter_min" value="-1.2" />  <!-- default = -1.2 -->
+  <param name="tabletop_segmentation/y_filter_max" value= "1.2" />  <!-- default =  1.2 -->
+
+  <param name="tabletop_segmentation/z_filter_min" value="0.1" />  <!--   0.10  default = 0.35 -->
+  <param name="tabletop_segmentation/z_filter_max" value="1.5" />  <!-- default = 1.0 -->
+
+  <!-- Table is above the base_footprint frame, so use negative values below -->
+  <param name="tabletop_segmentation/table_z_filter_min" value="-0.5" />  <!-- default = -0.5 -->
+  <param name="tabletop_segmentation/table_z_filter_max" value="-0.01" />  <!-- default = -0.01 -->
+
+
+
+  <!-- Head scan table Action Server -->
+  <!-- (must be launched in same namespace as desired follow_joint_trajectory action) -->
+  <group ns="head_traj_controller"> 
+    <node name="reem_scan_table_action" pkg="reem_head_scan_action" type="scan_snapshot_action_node" respawn="true" output="screen">
+      <remap from="snapshot_service" to="/xtion_snapshotter/snapshot"/>
+    </node>
+  </group>
+
+
+</launch>

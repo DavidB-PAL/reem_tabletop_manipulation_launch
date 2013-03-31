@@ -1,0 +1,128 @@
+<launch>
+
+  <!-- 
+  Launch the required nodes to test the Tabletop Perception system.
+
+  Can be used to scan a table, segment the table, detect object PointCloud clusters,
+  and recognize objects from the database.
+
+  This is important to test the required functionality preceeding Tabletop Manipulation.
+
+  ~~ David Butterworth
+     PAL Robotics S.L. 2013
+  -->
+
+
+  <arg name="sim" default="true"/>
+  <arg name="use_snapshotter" default="true" /> <!-- enable the PointCloud snapshotter -->
+
+
+  <!-- 
+  Launch Perception
+  -->
+
+  <include file="$(find reem_perception_launch)/launch/perception.launch">
+    <arg name="sim" value="$(arg sim)" />
+    <arg name="use_snapshotter" value="$(arg use_snapshotter)" />
+  </include>
+
+
+
+  <!-- 
+  The rest of the launch file is required for the Tabletop Perception test.
+
+  We do not launch  'reem_arm_navigation/launch/reem_arm_navigation.launch'
+  only some of those nodes are required for this test.
+  -->
+
+
+  <!-- 
+  TODO: test if can move some of the ROS Params from global, to back under their specific node.
+  -->
+
+
+  <arg name="kinect_camera_name" default="head_mount_xtion" />
+  <arg name="kinect_frame_prefix" default="/head_mount_xtion" />
+  <arg name="flatten_table" default="false"/>
+
+
+  <!-- Environment & Planning Scene Validity servers -->
+  <include file="$(find reem_arm_navigation)/launch/environment_server.launch">
+    <arg name="use_monitor" value="true" />
+    <arg name="use_collision_map" value="true" />
+  </include>
+
+
+  <!-- Household objects database server -->
+  <!--    It is optional to have a working database, it's only required to match models to clusters, or use pre-planned grasps -->
+  <!--    However you must load this node, because many other nodes require its mesh Service -->
+  <!--<rosparam command="load"  file="$(find household_objects)/config/server.yaml" /> -->    <!-- Local REEM database -->
+  <rosparam command="load"  file="$(find household_objects_database)/config/wgs36.yaml" />    <!-- Use this incorrect config to disable database -->
+  <node pkg="household_objects_database" name="objects_database_node" type="objects_database_node" respawn="true" output="screen"/>    
+
+
+  <!-- Cluster Bounding Box Finger --> 
+  <node name="cluster_bounding_box_finder" pkg="object_manipulator" cwd="node" type="cluster_bounding_box_finder_server.py" output="screen" respawn="false" >
+    <param name="z_up_frame" value="/base_link" />
+  </node>
+
+
+  <!-- Tabletop Segmentation, Object Detection & (optional) Recognition -->
+  <!-- PR2 doesn't self_filter the input for this, so we're doing the same, because the self_filter lowers the resolution -->
+  <include file="$(find tabletop_object_detector)/launch/tabletop_complete.launch">
+    <arg name="tabletop_segmentation_points_input" value="$(arg kinect_camera_name)/depth_registered/points"/>
+    <arg name="flatten_table" value="$(arg flatten_table)"/>
+  </include>
+
+  <!-- params for  tabletop_object_recognition -->
+  <param name="tabletop_object_recognition/fit_merge_threshold" value="0.05" /> <!-- threshold for separation of clusters -->
+  <param name="tabletop_object_recognition/min_marker_quality" value="0.003" /> <!-- if object detection confidence is below this threshold, display a marker in Rviz -->
+
+
+  <!-- Tabletop Collision Map Processing -->
+  <!-- adds objects to collision map, removes the table plane, etc. -->
+  <node pkg="tabletop_collision_map_processing" name="tabletop_collision_map_processing" type="tabletop_collision_map_processing_node" respawn="false" output="screen">
+    <param name="get_model_mesh_srv" value="/objects_database_node/get_model_mesh" />
+    <param name="static_map_cloud_name" value="/doesnt_exist" /> <!-- doesn't appear to be used for anything anymore -->
+    <param name="table_thickness" value="0.02" /> <!-- after table segmentation, this depth of voxels are subtracted from collision map -->
+  </node>  
+
+
+  <!-- params for  tabletop_segmentation -->
+  <!-- Minimum number of points per cluster -->
+  <!-- robot_self_filter downsamples the PointCloud, so the segmentation will otherwise miss some objects -->
+  <param name="tabletop_segmentation/min_cluster_size" value="50" />  <!-- default = 300 -->
+
+  <!-- This has to be the same frame as the 'desired_frame' in your service calls to tabletop_collision_map_processing -->
+  <param name="tabletop_segmentation/processing_frame" value="base_footprint" />
+
+  <!-- Params for the box filter inside the tabletop_segmentation node -->
+  <!-- if not using the self-filtered point cloud, these limits have to be set so that they exclude all parts of the robot -->
+  <!-- Filter range is in meters!  Note that max_z is 1.5, if it's too low you will lose the tops of object clusters -->
+  <!-- Filter range is NOT 0.0 to 1.0 like API suggests !! -->
+
+  <param name="tabletop_segmentation/x_filter_min" value="0.1" />  <!-- 0.1  can see closer to front, default = 0.3 -->
+  <param name="tabletop_segmentation/x_filter_max" value="1.0" />  <!-- default = 1.0 -->
+
+  <param name="tabletop_segmentation/y_filter_min" value="-1.2" />  <!-- default = -1.2 -->
+  <param name="tabletop_segmentation/y_filter_max" value= "1.2" />  <!-- default =  1.2 -->
+
+  <param name="tabletop_segmentation/z_filter_min" value="0.1" />  <!--   0.10  default = 0.35 -->
+  <param name="tabletop_segmentation/z_filter_max" value="1.5" />  <!-- default = 1.0 -->
+
+  <!-- Table is above the base_footprint frame, so use negative values below -->
+  <param name="tabletop_segmentation/table_z_filter_min" value="-0.5" />  <!-- default = -0.5 -->
+  <param name="tabletop_segmentation/table_z_filter_max" value="-0.01" />  <!-- default = -0.01 -->
+
+
+  <!-- Head scan table Action Server -->
+  <!-- (must be launched in same namespace as desired follow_joint_trajectory action) -->
+  <group ns="head_traj_controller"> 
+    <node name="reem_scan_table_action" pkg="reem_head_scan_action" type="scan_snapshot_action_node" respawn="true" output="screen">
+      <remap from="snapshot_service" to="/xtion_snapshotter/snapshot"/>
+    </node>
+  </group>
+
+
+</launch>
+

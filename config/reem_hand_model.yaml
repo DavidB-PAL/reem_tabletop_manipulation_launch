@@ -1,0 +1,95 @@
+#
+# REEM Robot Hand
+# Configuration for pr2_gripper_grasp_cluster_planner node
+# 
+# Defines the grasp model, checking for side grasps only
+# Its best to tweak things and check the output in Rviz
+#
+# ~ David Butterworth
+#   PAL Robotics S.L. 2013
+#
+
+# Hand area (green)
+gripper_boxes: [ [[0, 0.04, -0.071], [0.12, 0.0875, 0.035]], [[0, -0.0235, -0.00925], [0.0475, 0.0235, 0.01325]], [[0.04, -0.0545, -0.00925], [0.08, -0.0235, 0.01325]] ]
+
+# Grasp area (blue)
+space_boxes: [[ [[0.054, -0.0235, -0.005], [.12, .0235, 0.005]] ]]
+
+joint_names: 
+  right_arm: ['hand_right_thumb_joint', 'hand_right_index_1_joint', 'hand_right_index_2_joint', 'hand_right_index_3_joint', 'hand_right_middle_1_joint', 'hand_right_middle_2_joint', 'hand_right_middle_3_joint']
+  left_arm: ['hand_left_thumb_joint', 'hand_left_index_1_joint', 'hand_left_index_2_joint', 'hand_left_index_3_joint', 'hand_left_middle_1_joint', 'hand_left_middle_2_joint', 'hand_left_middle_3_joint']
+
+# Before grasping, the thumb joint should be fully open (extended downwards)
+pregrasp_joint_angles:
+  right_arm: [1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]
+  left_arm: [1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]
+
+# Fully-closed position
+# thumb is 1.5 radians, other joints are 4.5
+grasp_joint_angles: 
+  right_arm: [1.5, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5 ]
+  left_arm:  [1.5, 4.5, 4.5, 4.5, 4.5, 4.5, 4.5 ]
+
+# not used
+pregrasp_joint_efforts:
+  right_arm: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0 ]
+  left_arm: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0 ]
+grasp_joint_efforts:
+  right_arm: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0 ]
+  left_arm: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0 ]
+
+
+# Options for point_cluster_grasp_planner.py
+
+# identity matrix, because the gripper model origin is same as the grasping frame
+actual_wrist_frame_in_model_frame: [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]
+
+# default pre-grasp dist away from grasp (overridden if pregrasp_just_outside_box is True)
+default_pregrasp_dist: 0.10
+
+# inimum number of points to be declared a good grasp
+min_good_grasp_points: 10
+
+# distance from the wrist frame to the center of the fingertips (along the gripper x-axis)
+# For overhead & high-point grasps, the planner starts testing with the fingertips at edge of bounding box
+wrist_to_fingertip_center_dist: 0.180
+
+# distance from the wrist frame to a safe distance barely past the surface of the palm (along the gripper x-axis)
+wrist_to_palm_dist: 0.07
+
+# bounding box "fits in hand" if the relevant dimension is less than this
+gripper_opening: 0.10
+
+# only want side grasps if the bounding box height is greater than this
+height_good_for_side_grasps: 0.100
+
+# start the side grasp search at this height or at the center of the object, whichever is higher
+# this is the starting height of gripper x,y axis, so it doesnt hit the table
+# however, it just starts higher, then checks steps of lower levels and still hits the table
+side_grasp_start_height: 0.08 
+
+# how far to move the gripper to the side with each step when searching for grasps
+# This is only used by top grasps and other top grasps?
+side_step: 0.02
+        
+# how far to move the palm inward with each step when searching for grasps
+palm_step: 0.005
+
+# set this to true to limit the planner to overhead grasps
+overhead_grasps_only: False
+
+# set this to true to limit the planner to side grasps
+side_grasps_only: True
+
+# set this to false to omit random high-point grasps
+include_high_point_grasps: True
+
+# set this to true to make the pregrasps be just outside the bounding box instead of self.pregrasp_dist away from the grasp
+pregrasp_just_outside_box: False
+
+# how many backing-off-from-the-deepest-possible-grasp grasps to keep for each good grasp found
+backoff_depth_steps: 5
+
+# don't check the neighbors for each grasp (reduces grasps checked, but makes for worse rankings)
+disable_grasp_neighbor_check: False
+

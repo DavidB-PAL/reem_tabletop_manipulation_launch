@@ -1,0 +1,57 @@
+#
+# REEM Robot Manipulation
+# Configuration for object_manipulator node
+# 
+# Defines the approach direction, and links that may be in collision
+#
+# ~ David Butterworth
+#   PAL Robotics S.L. 2013
+#
+
+# based on 
+# /opt/ros/fuerte/stacks/pr2_object_manipulation/manipulation/pr2_object_manipulation_launch/config/pr2_hand_descriptions.yaml
+
+hand_description:
+
+  left_arm:
+    hand_frame: hand_left_grasping_frame
+    robot_frame: /base_footprint
+    attached_objects_name: attached
+    attach_link: hand_left_middle_2_link
+    hand_group_name: l_end_effector
+    arm_group_name: left_arm
+    hand_database_name: REEM_HAND_v1
+
+    hand_joints: [hand_left_thumb_joint, hand_left_index_1_joint, hand_left_index_2_joint, hand_left_index_3_joint, hand_left_middle_1_joint, hand_left_middle_2_joint, hand_left_middle_3_joint]
+
+    # Links of hand that are in contact with object, disable collision checks
+    hand_touch_links: [arm_left_tool_link, hand_left_palm_link, hand_left_thumb_link, hand_left_thumb_extension_link, hand_left_index_1_link, hand_left_index_2_link, hand_left_index_3_link, hand_left_middle_1_link, hand_left_middle_2_link, hand_left_middle_3_link]
+
+    # Links of hand close to other obstacles, collision padding is reduced to zero
+    hand_fingertip_links: [arm_left_tool_link, hand_left_palm_link, hand_left_thumb_link, hand_left_thumb_extension_link, hand_left_index_1_link, hand_left_index_2_link, hand_left_index_3_link, hand_left_middle_1_link, hand_left_middle_2_link, hand_left_middle_3_link]
+
+    # Grasp approach
+    hand_approach_direction: [1.0,-0.15,0.0]
+
+    arm_joints: [arm_left_1_joint, arm_left_2_joint, arm_left_3_joint, arm_left_4_joint, arm_left_5_joint, arm_left_6_joint, arm_left_7_joint]
+
+
+  right_arm:
+    hand_frame: hand_right_grasping_frame
+    robot_frame: /base_footprint
+    attached_objects_name: attached
+    attach_link: hand_right_middle_2_link
+    hand_group_name: r_end_effector
+    arm_group_name: right_arm
+    hand_database_name: REEM_HAND_v1
+
+    hand_joints: [hand_right_thumb_joint, hand_right_index_1_joint, hand_right_index_2_joint, hand_right_index_3_joint, hand_right_middle_1_joint, hand_right_middle_2_joint, hand_right_middle_3_joint]
+
+    hand_touch_links: [arm_right_tool_link, hand_right_palm_link, hand_right_grasping_frame, hand_right_thumb_link, hand_right_thumb_extension_link, hand_right_index_1_link, hand_right_index_2_link, hand_right_index_3_link, hand_right_middle_1_link, hand_right_middle_2_link, hand_right_middle_3_link]
+
+    hand_fingertip_links: [arm_right_tool_link, hand_right_palm_link, hand_right_thumb_link, hand_right_thumb_extension_link, hand_right_index_1_link, hand_right_index_2_link, hand_right_index_3_link, hand_right_middle_1_link, hand_right_middle_2_link, hand_right_middle_3_link]
+
+    hand_approach_direction: [1.0,-0.15,0.0]
+
+    arm_joints: [arm_right_1_joint, arm_right_2_joint, arm_right_3_joint, arm_right_4_joint, arm_right_5_joint, arm_right_6_joint, arm_right_7_joint]
+

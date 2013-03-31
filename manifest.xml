@@ -1,0 +1,25 @@
+<package>
+  <description brief="reem_tabletop_manipulation_launch">
+
+     reem_tabletop_manipulation_launch
+
+  </description>
+  <author>dbworth</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/reem_tabletop_manipulation_launch</url>
+  <depend package="roscpp"/>
+
+  <depend package="reem_description"/>
+  <depend package="reem_arm_navigation"/>
+
+  <depend package="tabletop_object_detector"/>
+  <depend package="tabletop_collision_map_processing"/>
+  <depend package="arm_navigation_msgs"/>
+  <depend package="tf"/>
+  <depend package="actionlib"/>
+  <depend package="object_manipulation_msgs"/>
+
+</package>
+
+

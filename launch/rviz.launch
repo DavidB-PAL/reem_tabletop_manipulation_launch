@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- 
+Load Rviz visualization tool 
+with all the required topics to check the behaviour
+of the perception and manipulation systems.
+-->
+<launch>
+
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find reem_tabletop_manipulation_launch)/rviz/perception-manipulation.vcg" required="true" />
+
+</launch> 
+
